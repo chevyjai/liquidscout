@@ -1,597 +1,606 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { DepthChart } from '../components/DepthChart';
-import { CumulativeChart } from '../components/CumulativeChart';
-import { Multicall3Loader } from '../components/Multicall3Loader';
-import { AerodromeLogo, UniswapLogo } from '../components/icons';
-import { CopyButton } from '../components/CopyButton';
-import { useLiquidity } from '../lib/useLiquidity';
-import { DEFAULT_POOL } from '../lib/pools';
-import { tickToPrice } from '../lib/liquidity';
-import {
-  MAX_POOLS,
-  isValidAddress,
-  loadStoredPools,
-  resolvePoolList,
-  saveStoredPools,
-  shortAddress,
-  type StoredPool,
-} from '../lib/poolStore';
+/**
+ * Landing page — terminal-forward single-purpose search.
+ *
+ * Design brief (approved by user):
+ *   - "Search IS the hero", Bloomberg/Dune mood, quant aesthetic, no AI slop.
+ *   - Addresses-only submit (v1). Quick-pick chips below for common pools.
+ *   - Hardcoded stat strip (no fake TVL counters).
+ *   - Cyan accent used sparingly: brand square, focus ring, chip hover.
+ *
+ * Full spec lives in the UXUI agent's memory file; this component is the
+ * faithful implementation. See CLAUDE.md (agent team workflow) for how the
+ * spec was produced.
+ */
 
-export default function Page() {
-  const [poolId, setPoolId] = useState(DEFAULT_POOL.id);
-  const [invertPrice, setInvertPrice] = useState(false);
-  const [stored, setStored] = useState<StoredPool[]>([]);
-  const [addInput, setAddInput] = useState('');
-  const [addError, setAddError] = useState<string | null>(null);
+import { useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
+import { isValidAddress } from '../lib/poolStore';
 
-  // Hydrate stored pools from localStorage after mount (SSR-safe).
-  useEffect(() => {
-    setStored(loadStoredPools());
-  }, []);
-
-  const allPools = useMemo(() => resolvePoolList(stored), [stored]);
-  const pool = useMemo(
-    () => allPools.find((p) => p.id === poolId) ?? DEFAULT_POOL,
-    [poolId, allPools],
-  );
-
-  const handleAddPool = () => {
-    const addr = addInput.trim();
-    setAddError(null);
-    if (!isValidAddress(addr)) {
-      setAddError('Not a valid 0x address');
-      return;
-    }
-    const normalized = addr.toLowerCase();
-    if (allPools.some((p) => p.address.toLowerCase() === normalized)) {
-      setAddError('Already tracked');
-      return;
-    }
-    if (stored.length >= MAX_POOLS) {
-      setAddError(`Max ${MAX_POOLS} custom pools`);
-      return;
-    }
-    const id = `custom-${normalized.slice(2, 10)}`;
-    const next: StoredPool[] = [
-      ...stored,
-      {
-        id,
-        label: shortAddress(addr),
-        address: addr as `0x${string}`,
-        userAdded: true,
-      },
-    ];
-    setStored(next);
-    saveStoredPools(next);
-    setPoolId(id);
-    setAddInput('');
-  };
-
-  const handleRemovePool = (id: string) => {
-    const next = stored.filter((s) => s.id !== id);
-    setStored(next);
-    saveStoredPools(next);
-    if (poolId === id) setPoolId(DEFAULT_POOL.id);
-  };
-
-  const isCustomPool = stored.some((s) => s.id === poolId);
-
-  const { data, error, isLoading, isRefreshing, refetch, pendingEvents } = useLiquidity({
-    poolAddress: pool.address,
-    // Public RPCs are stingy; ±2 words is a good MVP default. Bump to 5+
-    // after you set NEXT_PUBLIC_BASE_RPC_URL to an Alchemy/QuickNode endpoint.
-    wordRadius: 2,
-    invertPrice,
-  });
-
-  const currentPrice = data
-    ? tickToPrice(
-        data.pool.tick,
-        data.tokens[0].decimals,
-        data.tokens[1].decimals,
-        invertPrice,
-      )
-    : null;
-
-  return (
-    <main style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 24,
-        }}
-      >
-        <div>
-          <h1 style={{ margin: 0, fontSize: 28 }}>
-            LiquidScout{' '}
-            <span style={{ color: '#22d3ee', fontWeight: 400, fontSize: 16 }}>
-              · Base
-            </span>
-          </h1>
-          <p style={{ margin: '6px 0 0', color: '#9ca3af' }}>
-            Per-tick concentrated liquidity, refreshed by on-chain events.
-          </p>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select
-              value={poolId}
-              onChange={(e) => setPoolId(e.target.value)}
-              style={{
-                background: '#0b1220',
-                color: '#e5e7eb',
-                border: '1px solid #1f2937',
-                padding: '0 12px',
-                height: 36,
-                borderRadius: 8,
-                minWidth: 180,
-              }}
-            >
-              {allPools.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-            {isCustomPool && (
-              <button
-                className="card-btn"
-                onClick={() => handleRemovePool(poolId)}
-                title="Remove pool from watchlist"
-                style={{
-                  background: 'transparent',
-                  color: '#94a3b8',
-                  border: '1px solid #1f2937',
-                  padding: '0 12px',
-                  height: 36,
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                }}
-              >
-                Remove
-              </button>
-            )}
-            <button
-              className="card-btn"
-              onClick={() => setInvertPrice((v) => !v)}
-              style={{
-                background: '#0b1220',
-                color: '#e5e7eb',
-                border: '1px solid #1f2937',
-                padding: '8px 14px',
-                height: 36,
-                borderRadius: 8,
-                cursor: 'pointer',
-              }}
-            >
-              Invert
-            </button>
-            <button
-              className="primary-btn"
-              onClick={refetch}
-              disabled={isLoading || isRefreshing}
-              style={{
-                background: '#22d3ee',
-                color: '#030712',
-                border: 'none',
-                padding: '8px 16px',
-                height: 36,
-                borderRadius: 8,
-                fontWeight: 600,
-                cursor: isLoading || isRefreshing ? 'wait' : 'pointer',
-              }}
-            >
-              {isRefreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input
-              type="text"
-              value={addInput}
-              onChange={(e) => {
-                setAddInput(e.target.value);
-                setAddError(null);
-              }}
-              onKeyDown={(e) => e.key === 'Enter' && handleAddPool()}
-              placeholder="Add pool address (0x...)"
-              style={{
-                background: '#0b1220',
-                color: '#e5e7eb',
-                border: `1px solid ${addError ? '#ef4444' : '#1f2937'}`,
-                padding: '6px 10px',
-                borderRadius: 8,
-                fontSize: 12,
-                width: 260,
-                fontFamily: 'ui-monospace, monospace',
-              }}
-            />
-            <button
-              onClick={handleAddPool}
-              style={{
-                background: '#0b1220',
-                color: '#22d3ee',
-                border: '1px solid #22d3ee',
-                padding: '6px 12px',
-                borderRadius: 8,
-                cursor: 'pointer',
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
-              Add
-            </button>
-            {addError && (
-              <span style={{ color: '#ef4444', fontSize: 11 }}>{addError}</span>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <section
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '2fr 1fr 1fr 1.2fr',
-          gap: 12,
-          marginBottom: 24,
-        }}
-      >
-        <PoolIdentityCard pool={pool} data={data} />
-        <VenueCard variant={data?.pool.variant} />
-        <PoolTypeCard
-          tickSpacing={data?.pool.tickSpacing}
-          fee={data?.pool.fee}
-        />
-        <Stat
-          label="Price"
-          value={currentPrice != null ? formatPrice(currentPrice) : '—'}
-          sub={
-            data
-              ? `${data.tokens[0].symbol} / ${data.tokens[1].symbol}${
-                  invertPrice ? ' (inv)' : ''
-                }`
-              : ''
-          }
-          hero
-        />
-      </section>
-
-      <section style={card()}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 12,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 16 }}>Liquidity Depth</h2>
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>
-            {data
-              ? `${data.ticks.length} initialized ticks · fetched in ${data.elapsedMs}ms`
-              : 'loading…'}
-            {pendingEvents > 0 && (
-              <span style={{ color: '#f59e0b', marginLeft: 8 }}>
-                · {pendingEvents} event{pendingEvents === 1 ? '' : 's'} pending
-              </span>
-            )}
-          </div>
-        </div>
-        {error ? (
-          <ErrorPanel error={error} onRetry={refetch} />
-        ) : isLoading || !data ? (
-          <Multicall3Loader height={360} />
-        ) : (
-          <DepthChart
-            bins={data.bins}
-            currentTick={data.pool.tick}
-            token0={data.tokens[0]}
-            token1={data.tokens[1]}
-            invertPrice={invertPrice}
-            pairLabel={`${data.tokens[0].symbol}/${data.tokens[1].symbol}`}
-          />
-        )}
-      </section>
-
-      <section style={{ ...card(), marginTop: 16 }}>
-        <h2 style={{ margin: '0 0 12px', fontSize: 16 }}>Cumulative Depth</h2>
-        {error || isLoading || !data ? (
-          <Multicall3Loader height={280} label="Computing depth curve…" />
-        ) : (
-          <CumulativeChart
-            bins={data.bins}
-            currentTick={data.pool.tick}
-            token0={data.tokens[0]}
-            token1={data.tokens[1]}
-            invertPrice={invertPrice}
-          />
-        )}
-      </section>
-
-      <footer style={{ marginTop: 24, color: '#94a3b8', fontSize: 12 }}>
-        RPC:{' '}
-        <span className="mono">
-          {process.env.NEXT_PUBLIC_BASE_RPC_URL ?? 'https://base-rpc.publicnode.com'}
-        </span>{' '}
-        · Events from Swap/Mint/Burn trigger auto-refresh.
-      </footer>
-    </main>
-  );
-}
-
-function PoolIdentityCard({
-  pool,
-  data,
-}: {
-  pool: { address: string; label: string };
-  data: ReturnType<typeof useLiquidity>['data'];
-}) {
-  return (
-    <div style={card({ padding: 14 })}>
-      <div
-        style={{
-          color: '#9ca3af',
-          fontSize: 12,
-          textTransform: 'uppercase',
-          letterSpacing: 0.8,
-          marginBottom: 6,
-        }}
-      >
-        Pool
-      </div>
-      <AddressRow
-        label="Pool"
-        address={pool.address}
-        explorer={`https://basescan.org/address/${pool.address}`}
-      />
-      {data?.tokens?.[0] && (
-        <AddressRow
-          label={data.tokens[0].symbol}
-          address={data.tokens[0].address}
-          explorer={`https://basescan.org/token/${data.tokens[0].address}`}
-        />
-      )}
-      {data?.tokens?.[1] && (
-        <AddressRow
-          label={data.tokens[1].symbol}
-          address={data.tokens[1].address}
-          explorer={`https://basescan.org/token/${data.tokens[1].address}`}
-        />
-      )}
-    </div>
-  );
-}
-
-function AddressRow({
-  label,
-  address,
-  explorer,
-}: {
+interface QuickPick {
   label: string;
   address: string;
-  explorer: string;
-}) {
+}
+
+const QUICK_PICKS: QuickPick[] = [
+  // Aerodrome Slipstream USDC/CHECK — the default demo pool (known-working).
+  { label: 'USDC / CHECK', address: '0x3c4384f3664b37a3cb5a5cb3452b4b4a3aa1256f' },
+  // Uniswap V3 WETH/USDC on Base — the canonical Base high-volume pool.
+  { label: 'WETH / USDC', address: '0xd0b53D9277642d899DF5C87A3966A349A798F224' },
+  // Aerodrome Slipstream cbBTC/USDC.
+  { label: 'cbBTC / USDC', address: '0x4e962BB3889Bf030368F56810A9c96B83CB3E778' },
+];
+
+export default function Landing() {
+  const router = useRouter();
+  const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = (e?: FormEvent) => {
+    e?.preventDefault();
+    const trimmed = value.trim();
+    if (!isValidAddress(trimmed)) {
+      setError('Not a valid Base address');
+      return;
+    }
+    router.push(`/pool/${trimmed.toLowerCase()}`);
+  };
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 0',
-        fontSize: 12,
-      }}
+    <div style={frameStyle}>
+      {/* Faint dot grid — the only decorative chrome on the page */}
+      <div style={dotGridStyle} aria-hidden="true" />
+
+      <Nav />
+
+      <main style={mainStyle}>
+        <Hero value={value} setValue={setValue} error={error} setError={setError} submit={submit} />
+        <QuickPicks onPick={(addr) => router.push(`/pool/${addr.toLowerCase()}`)} />
+        <StatStrip />
+        <PreviewStrip />
+      </main>
+
+      <Footer />
+    </div>
+  );
+}
+
+// ============================================================================
+// Sections
+// ============================================================================
+
+function Nav() {
+  return (
+    <nav style={navStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={brandSquareStyle} aria-hidden="true" />
+        <span style={wordmarkStyle}>LIQUIDSCOUT</span>
+      </div>
+      <div style={{ display: 'flex', gap: 20 }}>
+        <NavLink href="https://github.com/chevyjai/liquidscout#readme">DOCS</NavLink>
+        <NavLink href="https://github.com/chevyjai/liquidscout">GITHUB</NavLink>
+        <NavLink href="https://basescan.org">STATUS</NavLink>
+      </div>
+    </nav>
+  );
+}
+
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={navLinkStyle}
+      onMouseEnter={(e) => (e.currentTarget.style.color = '#e5e7eb')}
+      onMouseLeave={(e) => (e.currentTarget.style.color = '#94a3b8')}
     >
-      <span style={{ color: '#94a3b8', minWidth: 48, fontSize: 11 }}>{label}</span>
-      <a
-        href={explorer}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mono"
-        style={{ color: '#e5e7eb', textDecoration: 'none' }}
-        title={address}
-      >
-        {shortAddress(address)}
-      </a>
-      <CopyButton value={address} title={`Copy ${label} address`} />
-    </div>
+      {children}
+    </a>
   );
 }
 
-function VenueCard({
-  variant,
-}: {
-  variant?: 'uniswap-v3' | 'aerodrome-cl';
-}) {
-  const venue =
-    variant === 'aerodrome-cl'
-      ? { name: 'Aerodrome', sub: 'Slipstream CL', Logo: AerodromeLogo }
-      : variant === 'uniswap-v3'
-      ? { name: 'Uniswap', sub: 'V3', Logo: UniswapLogo }
-      : null;
-
-  return (
-    <div style={card({ padding: 14 })}>
-      <div
-        style={{
-          color: '#9ca3af',
-          fontSize: 12,
-          textTransform: 'uppercase',
-          letterSpacing: 0.8,
-        }}
-      >
-        Venue
-      </div>
-      {venue ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-          <venue.Logo size={24} />
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#e5e7eb' }}>
-              {venue.name}
-            </div>
-            <div style={{ fontSize: 11, color: '#94a3b8' }}>{venue.sub}</div>
-          </div>
-        </div>
-      ) : (
-        <div
-          className="mono"
-          style={{ fontSize: 20, marginTop: 4, color: '#e5e7eb' }}
-        >
-          —
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PoolTypeCard({
-  tickSpacing,
-  fee,
-}: {
-  tickSpacing?: number;
-  fee?: number;
-}) {
-  return (
-    <div style={card({ padding: 14 })}>
-      <div
-        style={{
-          color: '#9ca3af',
-          fontSize: 12,
-          textTransform: 'uppercase',
-          letterSpacing: 0.8,
-        }}
-      >
-        Pool Type
-      </div>
-      <div style={{ fontSize: 18, fontWeight: 600, marginTop: 8, color: '#e5e7eb' }}>
-        Concentrated
-      </div>
-      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-        {tickSpacing != null ? `spacing ${tickSpacing}` : '—'}
-        {fee != null ? ` · fee ${(fee / 10_000).toFixed(2)}%` : ''}
-      </div>
-    </div>
-  );
-}
-
-function Stat({
-  label,
+function Hero({
   value,
-  sub,
-  hero = false,
+  setValue,
+  error,
+  setError,
+  submit,
 }: {
-  label: string;
   value: string;
-  sub?: React.ReactNode;
-  hero?: boolean;
+  setValue: (v: string) => void;
+  error: string | null;
+  setError: (e: string | null) => void;
+  submit: (e?: FormEvent) => void;
 }) {
-  const base = card({ padding: 14 });
-  const heroStyles = hero
-    ? {
-        border: '1px solid rgba(34, 211, 238, 0.3)',
-        boxShadow: '0 0 0 1px rgba(34, 211, 238, 0.08) inset',
-      }
-    : {};
   return (
-    <div style={{ ...base, ...heroStyles }}>
-      <div style={{ color: '#9ca3af', fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-        {label}
+    <section style={heroStyle}>
+      <div style={eyebrowStyle}>
+        PER-TICK LIQUIDITY · BASE · UNISWAP V3 + AERODROME SLIPSTREAM
       </div>
-      <div
-        className="mono"
-        style={{
-          fontSize: hero ? 28 : 20,
-          marginTop: 4,
-          color: hero ? '#22d3ee' : '#e5e7eb',
-          fontWeight: hero ? 600 : 500,
-        }}
-      >
-        {value}
-      </div>
-      {sub ? (
-        <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{sub}</div>
-      ) : null}
-    </div>
+      <h1 style={h1Style}>Read any CL pool down to the tick.</h1>
+      <p style={subStyle}>
+        Live bid/ask depth, cumulative curves, and tick-by-tick inventory for
+        concentrated-liquidity pools on Base.
+      </p>
+
+      <form onSubmit={submit} style={searchFormStyle}>
+        <SearchBar
+          value={value}
+          onChange={(v) => {
+            setValue(v);
+            if (error) setError(null);
+          }}
+          onSubmit={submit}
+        />
+        {error && <div style={errorStyle}>{error}</div>}
+      </form>
+    </section>
   );
 }
 
-function Skeleton({ height, label }: { height: number; label: string }) {
-  return (
-    <div
-      style={{
-        height,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#94a3b8',
-        background: 'rgba(31, 41, 55, 0.25)',
-        borderRadius: 8,
-      }}
-    >
-      {label}
-    </div>
-  );
-}
+function SearchBar({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
 
-function ErrorPanel({ error, onRetry }: { error: Error; onRetry: () => void }) {
   return (
     <div
       style={{
-        background: 'rgba(239, 68, 68, 0.1)',
-        border: '1px solid rgba(239, 68, 68, 0.3)',
-        borderRadius: 8,
-        padding: 16,
+        ...searchBarStyle,
+        borderColor: focused ? '#22d3ee' : '#1f2937',
+        boxShadow: focused ? '0 0 0 4px rgba(34, 211, 238, 0.10)' : 'none',
       }}
     >
-      <div style={{ color: '#fca5a5', fontWeight: 600 }}>Failed to fetch ticks</div>
-      <div className="mono" style={{ color: '#9ca3af', fontSize: 12, marginTop: 6 }}>
-        {error.message}
-      </div>
-      <button
-        onClick={onRetry}
-        style={{
-          marginTop: 10,
-          background: '#ef4444',
-          color: '#fff',
-          border: 'none',
-          padding: '6px 12px',
-          borderRadius: 6,
-          cursor: 'pointer',
-        }}
-      >
-        Retry
-      </button>
+      <SearchIcon />
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
+        placeholder="0x… pool address"
+        spellCheck={false}
+        autoComplete="off"
+        autoCapitalize="off"
+        autoCorrect="off"
+        style={searchInputStyle}
+        aria-label="Pool address"
+      />
+      <kbd style={kbdStyle} aria-hidden="true">↵</kbd>
     </div>
   );
 }
 
-function card(overrides: Record<string, string | number> = {}) {
-  return {
-    background: '#0b1220',
-    border: '1px solid #1f2937',
-    borderRadius: 12,
-    padding: 20,
-    ...overrides,
-  } as React.CSSProperties;
+function SearchIcon() {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#64748b"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ position: 'absolute', left: 20, pointerEvents: 'none' }}
+      aria-hidden="true"
+    >
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.5" y2="16.5" />
+    </svg>
+  );
 }
 
-function trimBigInt(v: bigint): string {
-  const s = v.toString();
-  if (s.length <= 10) return s;
-  // 1.23e15-style for readability
-  const head = s.slice(0, 3);
-  return `${head[0]}.${head.slice(1)}e${s.length - 1}`;
+function QuickPicks({ onPick }: { onPick: (address: string) => void }) {
+  return (
+    <div style={quickPicksStyle}>
+      {QUICK_PICKS.map((p) => (
+        <button
+          key={p.address}
+          onClick={() => onPick(p.address)}
+          style={chipStyle}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.borderColor = '#22d3ee';
+            e.currentTarget.style.color = '#e5e7eb';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.borderColor = '#1f2937';
+            e.currentTarget.style.color = '#94a3b8';
+          }}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-function formatPrice(p: number): string {
-  if (!isFinite(p)) return '∞';
-  if (p === 0) return '0';
-  const abs = Math.abs(p);
-  if (abs >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  if (abs >= 1) return p.toLocaleString(undefined, { maximumFractionDigits: 4 });
-  const fixed = p.toFixed(6);
-  return fixed.replace(/\.?0+$/, '');
+function StatStrip() {
+  // Hardcoded truths only — no fake live counters. Every value is something
+  // that's actually true about the app and won't silently rot.
+  const stats = [
+    { label: 'PROTOCOLS', value: '2' },
+    { label: 'CHAIN', value: 'BASE' },
+    { label: 'TICK RESOLUTION', value: '1' },
+    { label: 'REFRESH', value: 'LIVE' },
+  ];
+  return (
+    <div style={statStripStyle}>
+      {stats.map((s, i) => (
+        <div
+          key={s.label}
+          style={{
+            ...statCellStyle,
+            borderLeft: i === 0 ? 'none' : '1px solid #1f2937',
+          }}
+        >
+          <div style={statLabelStyle}>{s.label}</div>
+          <div style={statValueStyle}>{s.value}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
+
+/**
+ * Static SVG preview of the depth chart. Hand-drawn proportions (not a real
+ * fetch) so the landing page renders instantly and doesn't hit the RPC on
+ * first paint. Matches the actual chart's palette and per-tick bar style.
+ */
+function PreviewStrip() {
+  return (
+    <div style={previewFrameStyle}>
+      <div style={previewOverlayLabelStyle}>
+        USDC / CHECK · 0x3c43…256f · LIVE
+      </div>
+      <svg
+        viewBox="0 0 1120 320"
+        style={{ width: '100%', height: 'auto', display: 'block' }}
+        preserveAspectRatio="none"
+        aria-label="Preview of the LiquidScout depth chart"
+      >
+        {/* Grid lines */}
+        {[80, 160, 240].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            y1={y}
+            x2="1120"
+            y2={y}
+            stroke="#1e293b"
+            strokeDasharray="3 3"
+            opacity="0.5"
+          />
+        ))}
+        {/* Current-price reference line */}
+        <line
+          x1="560"
+          y1="0"
+          x2="560"
+          y2="320"
+          stroke="#ec4899"
+          strokeWidth="1.5"
+          strokeDasharray="4 4"
+        />
+        {/* Bars — left bid (orange) */}
+        {[
+          { x: 40, h: 180 },
+          { x: 120, h: 28 },
+          { x: 200, h: 44 },
+          { x: 260, h: 36 },
+          { x: 320, h: 52 },
+          { x: 400, h: 68 },
+          { x: 470, h: 88 },
+          { x: 520, h: 72 },
+        ].map((b) => (
+          <rect
+            key={`l-${b.x}`}
+            x={b.x}
+            y={320 - b.h}
+            width="14"
+            height={b.h}
+            fill="#f97316"
+            fillOpacity="0.75"
+          />
+        ))}
+        {/* Active center bar (cyan) */}
+        <rect x="554" y="120" width="14" height="200" fill="#22d3ee" />
+        {/* Bars — right ask (green) */}
+        {[
+          { x: 610, h: 92 },
+          { x: 660, h: 72 },
+          { x: 720, h: 60 },
+          { x: 780, h: 48 },
+          { x: 850, h: 40 },
+          { x: 920, h: 32 },
+          { x: 990, h: 52 },
+          { x: 1060, h: 210 },
+        ].map((b) => (
+          <rect
+            key={`r-${b.x}`}
+            x={b.x}
+            y={320 - b.h}
+            width="14"
+            height={b.h}
+            fill="#10b981"
+            fillOpacity="0.75"
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function Footer() {
+  return (
+    <footer style={footerStyle}>
+      <span>LIQUIDSCOUT · BUILT ON BASE · NOT FINANCIAL ADVICE</span>
+      <span style={{ color: '#64748b' }}>chevyjai/liquidscout</span>
+    </footer>
+  );
+}
+
+// ============================================================================
+// Styles (inline — keeps the landing page self-contained and easy to diff)
+// ============================================================================
+
+const frameStyle: React.CSSProperties = {
+  position: 'relative',
+  minHeight: '100vh',
+  background: '#030712',
+  color: '#e5e7eb',
+  display: 'flex',
+  flexDirection: 'column',
+  overflow: 'hidden',
+};
+
+const dotGridStyle: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  backgroundImage:
+    'radial-gradient(rgba(31, 41, 55, 0.6) 1px, transparent 1px)',
+  backgroundSize: '32px 32px',
+  opacity: 0.35,
+  pointerEvents: 'none',
+  zIndex: 0,
+};
+
+const navStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
+  height: 72,
+  padding: '0 24px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  maxWidth: 1120,
+  margin: '0 auto',
+  width: '100%',
+};
+
+const brandSquareStyle: React.CSSProperties = {
+  width: 6,
+  height: 6,
+  background: '#22d3ee',
+};
+
+const wordmarkStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 14,
+  fontWeight: 600,
+  letterSpacing: '0.08em',
+  color: '#e5e7eb',
+};
+
+const navLinkStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 12,
+  color: '#94a3b8',
+  textDecoration: 'none',
+  letterSpacing: '0.05em',
+  transition: 'color 150ms ease',
+};
+
+const mainStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
+  flex: 1,
+  maxWidth: 1120,
+  margin: '0 auto',
+  padding: '0 24px',
+  width: '100%',
+};
+
+const heroStyle: React.CSSProperties = {
+  paddingTop: 'min(12vh, 96px)',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  textAlign: 'center',
+};
+
+const eyebrowStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 11,
+  color: '#64748b',
+  letterSpacing: '0.15em',
+  textTransform: 'uppercase',
+  marginBottom: 32,
+};
+
+const h1Style: React.CSSProperties = {
+  margin: 0,
+  fontSize: 'clamp(36px, 5.5vw, 56px)',
+  fontWeight: 500,
+  lineHeight: 1.1,
+  letterSpacing: '-0.02em',
+  color: '#e5e7eb',
+  maxWidth: 900,
+};
+
+const subStyle: React.CSSProperties = {
+  marginTop: 16,
+  fontSize: 16,
+  lineHeight: 1.5,
+  color: '#94a3b8',
+  maxWidth: 620,
+};
+
+const searchFormStyle: React.CSSProperties = {
+  width: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
+  marginTop: 40,
+};
+
+const searchBarStyle: React.CSSProperties = {
+  position: 'relative',
+  width: '100%',
+  maxWidth: 720,
+  height: 64,
+  background: '#0b1220',
+  border: '1px solid #1f2937',
+  borderRadius: 8,
+  display: 'flex',
+  alignItems: 'center',
+  transition: 'border-color 180ms ease, box-shadow 180ms ease',
+};
+
+const searchInputStyle: React.CSSProperties = {
+  flex: 1,
+  height: '100%',
+  padding: '0 60px 0 52px',
+  background: 'transparent',
+  border: 'none',
+  outline: 'none',
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 15,
+  color: '#e5e7eb',
+  caretColor: '#22d3ee',
+};
+
+const kbdStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 16,
+  width: 28,
+  height: 28,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  border: '1px solid #1f2937',
+  borderRadius: 4,
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 12,
+  color: '#64748b',
+  background: '#030712',
+};
+
+const errorStyle: React.CSSProperties = {
+  marginTop: 12,
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 12,
+  color: '#f97316',
+};
+
+const quickPicksStyle: React.CSSProperties = {
+  marginTop: 20,
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: 8,
+  justifyContent: 'center',
+};
+
+const chipStyle: React.CSSProperties = {
+  height: 28,
+  padding: '0 12px',
+  background: 'transparent',
+  border: '1px solid #1f2937',
+  borderRadius: 4,
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 12,
+  color: '#94a3b8',
+  cursor: 'pointer',
+  transition: 'border-color 150ms ease, color 150ms ease',
+};
+
+const statStripStyle: React.CSSProperties = {
+  marginTop: 120,
+  display: 'grid',
+  gridTemplateColumns: 'repeat(4, 1fr)',
+  border: '1px solid #1f2937',
+  borderRadius: 4,
+  background: '#0b1220',
+};
+
+const statCellStyle: React.CSSProperties = {
+  height: 72,
+  padding: '0 20px',
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+};
+
+const statLabelStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 10,
+  color: '#64748b',
+  letterSpacing: '0.12em',
+  textTransform: 'uppercase',
+  marginBottom: 4,
+};
+
+const statValueStyle: React.CSSProperties = {
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 14,
+  color: '#e5e7eb',
+  letterSpacing: '0.04em',
+};
+
+const previewFrameStyle: React.CSSProperties = {
+  position: 'relative',
+  marginTop: 80,
+  background: '#0b1220',
+  border: '1px solid #1f2937',
+  borderRadius: 8,
+  overflow: 'hidden',
+};
+
+const previewOverlayLabelStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: 12,
+  left: 16,
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 11,
+  color: '#64748b',
+  letterSpacing: '0.05em',
+  zIndex: 2,
+};
+
+const footerStyle: React.CSSProperties = {
+  position: 'relative',
+  zIndex: 1,
+  height: 64,
+  marginTop: 120,
+  padding: '0 24px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  maxWidth: 1120,
+  margin: '0 auto',
+  width: '100%',
+  fontFamily: 'var(--font-mono), ui-monospace, monospace',
+  fontSize: 12,
+  color: '#64748b',
+  letterSpacing: '0.05em',
+  borderTop: '1px solid #1f2937',
+};
