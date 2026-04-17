@@ -1,0 +1,189 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #030712;
+  color: #e5e7eb;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: #22d3ee;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  transition: border-color 150ms ease, background 150ms ease, color 150ms ease,
+    box-shadow 150ms ease, transform 150ms ease;
+}
+
+button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+select,
+input[type='text'] {
+  font-family: inherit;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+select:focus-visible,
+input[type='text']:focus-visible {
+  outline: none;
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+
+.mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Interactive card-button style (used by Invert, Remove, etc.) */
+.card-btn:hover {
+  border-color: #334155 !important;
+  background: #111a2e !important;
+}
+
+/* Accent primary CTA (Refresh) */
+.primary-btn:hover:not(:disabled) {
+  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.12);
+  transform: translateY(-1px);
+}
+
+/* Shimmer skeleton */
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(31, 41, 55, 0.2) 0%,
+    rgba(51, 65, 85, 0.35) 50%,
+    rgba(31, 41, 55, 0.2) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .primary-btn:hover:not(:disabled) {
+    transform: none;
+  }
+  .mc3-dino,
+  .mc3-leg,
+  .mc3-block,
+  .mc3-ground {
+    animation: none !important;
+  }
+}
+
+/* --- Multicall3 loader / dino runner --- */
+.mc3-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.mc3-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 78px;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(148, 163, 184, 0.35) 0 8px,
+    transparent 8px 16px
+  );
+  animation: mc3-ground-scroll 1s linear infinite;
+}
+
+@keyframes mc3-ground-scroll {
+  from { background-position: 0 0; }
+  to   { background-position: -32px 0; }
+}
+
+.mc3-dino {
+  position: absolute;
+  bottom: 76px;
+  left: calc(50% - 80px);
+  animation: mc3-jump 1.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.35));
+}
+
+@keyframes mc3-jump {
+  0%, 60%, 100% { transform: translateY(0); }
+  20%           { transform: translateY(-38px); }
+  35%           { transform: translateY(-42px); }
+  50%           { transform: translateY(-10px); }
+}
+
+.mc3-leg {
+  transform-origin: 10px 24px;
+  animation: mc3-legs 0.28s steps(2, end) infinite;
+}
+.mc3-leg-2 {
+  animation-delay: -0.14s;
+}
+
+@keyframes mc3-legs {
+  0%   { transform: translateY(0); }
+  50%  { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+
+.mc3-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 78px;
+  height: 28px;
+  overflow: hidden;
+}
+
+.mc3-block {
+  position: absolute;
+  bottom: 4px;
+  padding: 4px 8px;
+  background: rgba(11, 18, 32, 0.85);
+  border: 1px solid #334155;
+  border-radius: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  color: #22d3ee;
+  white-space: nowrap;
+  animation: mc3-block-scroll 14.4s linear infinite;
+  /* Start off-screen to the right */
+  transform: translateX(110vw);
+}
+
+@keyframes mc3-block-scroll {
+  from { transform: translateX(110%); }
+  to   { transform: translateX(-200%); }
+}
